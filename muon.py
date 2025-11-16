@@ -26,14 +26,17 @@ def cmd_baseline(args):
 
     print(f"🚀 Launching baseline training ({args.steps} steps)...")
 
-    # Auto-calculate dataset size based on steps (need examples for train + val)
-    # For small tests, use minimal data; for full runs, use more
+    # Auto-calculate dataset size and batch size based on steps
+    # For small tests, use minimal data and smaller batches to avoid OOM
     if args.steps <= 50:
         num_examples = 1000  # Small test
+        batch_size = 4  # Small batch to fit in memory
     elif args.steps <= 500:
         num_examples = 10000  # Medium run
+        batch_size = 8  # Medium batch
     else:
         num_examples = 100000  # Full run (1% of 10BT)
+        batch_size = int(args.batch_size)  # Use command line arg for full runs
 
     config = {
         "run_name": f"granite_baseline_{args.name}" if args.name else "granite_baseline",
@@ -41,7 +44,7 @@ def cmd_baseline(args):
         "dataset_name": os.getenv("DATASET_NAME", "HuggingFaceFW/fineweb-edu"),
         "dataset_config": os.getenv("DATASET_CONFIG", "sample-10BT"),
         "lr": float(args.lr),
-        "batch_size": int(args.batch_size),
+        "batch_size": batch_size,
         "max_steps": int(args.steps),
         "warmup_steps": int(args.warmup),
         "eval_steps": int(args.eval_steps),
@@ -66,13 +69,16 @@ def cmd_nolah(args):
 
     print(f"🧪 Launching NOLAH training (gate={args.gate}, scale={args.scale}, {args.steps} steps)...")
 
-    # Auto-calculate dataset size based on steps
+    # Auto-calculate dataset size and batch size based on steps
     if args.steps <= 50:
         num_examples = 1000  # Small test
+        batch_size = 4  # Small batch to fit in memory
     elif args.steps <= 500:
         num_examples = 10000  # Medium run
+        batch_size = 8  # Medium batch
     else:
         num_examples = 100000  # Full run (1% of 10BT)
+        batch_size = int(args.batch_size)  # Use command line arg for full runs
 
     config = {
         "run_name": f"granite_nolah_{args.name}" if args.name else "granite_nolah",
@@ -80,7 +86,7 @@ def cmd_nolah(args):
         "dataset_name": os.getenv("DATASET_NAME", "HuggingFaceFW/fineweb-edu"),
         "dataset_config": os.getenv("DATASET_CONFIG", "sample-10BT"),
         "lr": float(args.lr),
-        "batch_size": int(args.batch_size),
+        "batch_size": batch_size,
         "max_steps": int(args.steps),
         "warmup_steps": int(args.warmup),
         "eval_steps": int(args.eval_steps),
