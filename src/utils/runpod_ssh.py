@@ -58,9 +58,11 @@ def upload_script(script_path: str, config_dict: Dict[str, Any], dry_run: bool =
         script_content = f.read()
 
     # Inject configuration at the top of the script
-    config_json = json.dumps(config_dict, indent=2)
+    # Use repr() to get Python syntax instead of JSON (handles True/False correctly)
+    import pprint
+    config_str = pprint.pformat(config_dict, indent=2, width=120)
     modified_script = f"""# Auto-generated configuration
-CONFIG = {config_json}
+CONFIG = {config_str}
 
 {script_content}
 """
@@ -112,7 +114,8 @@ def launch_training(script_path: str, config: Dict[str, Any], dry_run: bool = Fa
         print("\nDRY RUN - Would execute:")
         print(f"  python /workspace/train.py")
         print(f"\nWith config:")
-        print(json.dumps(config, indent=2))
+        import pprint
+        print(pprint.pformat(config, indent=2, width=120))
         return
 
     # Launch training
