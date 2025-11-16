@@ -1,0 +1,46 @@
+# Secrets and API keys
+secrets/.env
+*.key
+*.pem
+id_ed25519*
+
+# Large model files - stored in Google Drive
+results/**/*.pth
+results/**/*.safetensors
+results/**/*.bin
+results/**/*.ckpt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# WandB
+wandb/
+.wandb/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Training artifacts (keep metadata)
+*.log
+!results/**/training_log.txt
+!results/**/metadata.json
+
+# Temporary files
+*.tmp
+*.bak
+~*
