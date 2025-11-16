@@ -115,16 +115,28 @@ class MuonNOLAH(Muon):
 
         # SVD-based orthogonal update on projected manifold
         try:
-            U, S, Vt = torch.linalg.svd(M_projected, full_matrices=False)
+            # Convert to float32 for SVD (BFloat16 not supported on CUDA)
+            M_float32 = M_projected.float()
+
+            U, S, Vt = torch.linalg.svd(M_float32, full_matrices=False)
             update = U @ Vt
+
+            # Convert back to original dtype and apply
+            update = update.to(p.dtype)
             p.data.add_(update, alpha=-group['lr'])
 
         except RuntimeError as e:
             # SVD can fail - fallback to standard Muon
             print(f"Warning: NOLAH SVD failed, using standard Muon: {e}")
             try:
-                U, S, Vt = torch.linalg.svd(self.buffers[p], full_matrices=False)
+                # Convert to float32 for SVD
+                M_float32 = self.buffers[p].float()
+
+                U, S, Vt = torch.linalg.svd(M_float32, full_matrices=False)
                 update = U @ Vt
+
+                # Convert back to original dtype and apply
+                update = update.to(p.dtype)
                 p.data.add_(update, alpha=-group['lr'])
             except RuntimeError:
                 # If even standard Muon fails, use gradient descent

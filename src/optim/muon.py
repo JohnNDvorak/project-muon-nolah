@@ -74,12 +74,18 @@ class Muon(Optimizer):
 
         # SVD-based orthogonal update
         try:
+            # Convert to float32 for SVD (BFloat16 not supported on CUDA)
+            M_float32 = self.buffers[p].float()
+
             # Compute SVD of momentum buffer
-            U, S, Vt = torch.linalg.svd(self.buffers[p], full_matrices=False)
+            U, S, Vt = torch.linalg.svd(M_float32, full_matrices=False)
 
             # Orthogonal update: p -= lr * U @ V^T
             # This projects the update onto the Grassmann manifold
             update = U @ Vt
+
+            # Convert back to original dtype and apply
+            update = update.to(p.dtype)
             p.data.add_(update, alpha=-group['lr'])
 
         except RuntimeError as e:
