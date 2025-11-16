@@ -28,12 +28,16 @@ def cmd_baseline(args):
 
     # Auto-calculate dataset size and batch size based on steps
     # For small tests, use minimal data and smaller batches to avoid OOM
+    # Note: batch_size=4 is safest for this model (340M params, 512 seq len)
     if args.steps <= 50:
         num_examples = 1000  # Small test
         batch_size = 4  # Small batch to fit in memory
+    elif args.steps <= 100:
+        num_examples = 10000  # Medium-small run
+        batch_size = 4  # Keep small batch (backward pass needs ~24GB)
     elif args.steps <= 500:
         num_examples = 10000  # Medium run
-        batch_size = 8  # Medium batch
+        batch_size = 4  # Conservative batch size
     else:
         num_examples = 100000  # Full run (1% of 10BT)
         batch_size = int(args.batch_size)  # Use command line arg for full runs
@@ -70,12 +74,16 @@ def cmd_nolah(args):
     print(f"🧪 Launching NOLAH training (gate={args.gate}, scale={args.scale}, {args.steps} steps)...")
 
     # Auto-calculate dataset size and batch size based on steps
+    # Note: batch_size=4 is safest for this model (340M params, 512 seq len)
     if args.steps <= 50:
         num_examples = 1000  # Small test
         batch_size = 4  # Small batch to fit in memory
+    elif args.steps <= 100:
+        num_examples = 10000  # Medium-small run
+        batch_size = 4  # Keep small batch (backward pass needs ~24GB)
     elif args.steps <= 500:
         num_examples = 10000  # Medium run
-        batch_size = 8  # Medium batch
+        batch_size = 4  # Conservative batch size
     else:
         num_examples = 100000  # Full run (1% of 10BT)
         batch_size = int(args.batch_size)  # Use command line arg for full runs

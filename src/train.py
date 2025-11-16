@@ -196,6 +196,11 @@ def train(config):
     output_dir = Path(config['output_dir']) / config['run_name']
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Running median tracking (window of 10 steps)
+    from collections import deque
+    import statistics
+    loss_window = deque(maxlen=10)
+
     # Warmup scheduler
     def get_lr_scale(step):
         if step < config['warmup_steps']:
@@ -230,14 +235,22 @@ def train(config):
         optimizer.step()
         optimizer.zero_grad()
 
+        # Track loss for running median
+        current_loss = loss.item()
+        loss_window.append(current_loss)
+
+        # Calculate running median
+        median_loss = statistics.median(loss_window)
+
         # Log
         wandb.log({
-            'train_loss': loss.item(),
+            'train_loss': current_loss,
+            'train_loss_median': median_loss,
             'lr': config['lr'] * lr_scale,
             'step': global_step
         })
 
-        pbar.set_postfix({'loss': f"{loss.item():.4f}", 'lr': f"{config['lr'] * lr_scale:.2e}"})
+        pbar.set_postfix({'loss': f"{current_loss:.4f}", 'median': f"{median_loss:.4f}", 'lr': f"{config['lr'] * lr_scale:.2e}"})
         pbar.update(1)
 
         global_step += 1
