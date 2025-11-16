@@ -69,15 +69,22 @@ class MuonNOLAH(Muon):
         Reduces momentum in high-gradient regions to prevent overshooting.
         """
         # Compute gradient magnitude percentile
-        # Convert to float32 for quantile (BFloat16 not supported)
-        g_mag = torch.abs(g).float()
-        percentile_95 = torch.quantile(g_mag.flatten(), 0.95)
+        # Sample to avoid "tensor too large" error with quantile
+        g_mag = torch.abs(g)
+        g_flat = g_mag.flatten()
+
+        # Sample max 10000 elements for percentile calculation
+        if g_flat.numel() > 10000:
+            indices = torch.randperm(g_flat.numel(), device=g.device)[:10000]
+            g_sample = g_flat[indices].float()
+        else:
+            g_sample = g_flat.float()
+
+        percentile_95 = torch.quantile(g_sample, 0.95)
 
         # Scale momentum where gradients are large
-        # Convert back to original dtype for comparison
-        g_mag_orig = torch.abs(g)
         scale = torch.where(
-            g_mag_orig > percentile_95.to(g.dtype),
+            g_mag > percentile_95.to(g.dtype),
             torch.tensor(self.scale_factor, device=M.device, dtype=M.dtype),
             torch.tensor(1.0, device=M.device, dtype=M.dtype)
         )
