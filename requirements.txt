@@ -1,0 +1,16 @@
+# Core ML dependencies
+torch>=2.0.0
+transformers>=4.35.0
+datasets>=2.14.0
+accelerate>=0.24.0
+
+# Experiment tracking
+wandb>=0.16.0
+
+# Utilities
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+
+# Development
+pytest>=7.4.0
+black>=23.11.0
