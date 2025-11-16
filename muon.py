@@ -26,6 +26,15 @@ def cmd_baseline(args):
 
     print(f"🚀 Launching baseline training ({args.steps} steps)...")
 
+    # Auto-calculate dataset size based on steps (need examples for train + val)
+    # For small tests, use minimal data; for full runs, use more
+    if args.steps <= 50:
+        num_examples = 1000  # Small test
+    elif args.steps <= 500:
+        num_examples = 10000  # Medium run
+    else:
+        num_examples = 100000  # Full run (1% of 10BT)
+
     config = {
         "run_name": f"granite_baseline_{args.name}" if args.name else "granite_baseline",
         "model_name": os.getenv("MODEL_NAME", "ibm-granite/granite-4.0-h-350m-base"),
@@ -37,6 +46,7 @@ def cmd_baseline(args):
         "warmup_steps": int(args.warmup),
         "eval_steps": int(args.eval_steps),
         "save_steps": int(args.save_steps),
+        "num_train_examples": num_examples,
         "nolah_enabled": False,
         "output_dir": "/workspace/results",
         "wandb_project": os.getenv("WANDB_PROJECT", "granite-muon-nolah"),
@@ -56,6 +66,14 @@ def cmd_nolah(args):
 
     print(f"🧪 Launching NOLAH training (gate={args.gate}, scale={args.scale}, {args.steps} steps)...")
 
+    # Auto-calculate dataset size based on steps
+    if args.steps <= 50:
+        num_examples = 1000  # Small test
+    elif args.steps <= 500:
+        num_examples = 10000  # Medium run
+    else:
+        num_examples = 100000  # Full run (1% of 10BT)
+
     config = {
         "run_name": f"granite_nolah_{args.name}" if args.name else "granite_nolah",
         "model_name": os.getenv("MODEL_NAME", "ibm-granite/granite-4.0-h-350m-base"),
@@ -67,6 +85,7 @@ def cmd_nolah(args):
         "warmup_steps": int(args.warmup),
         "eval_steps": int(args.eval_steps),
         "save_steps": int(args.save_steps),
+        "num_train_examples": num_examples,
         "nolah_enabled": True,
         "nolah_gate_type": args.gate,
         "nolah_scale_factor": float(args.scale),

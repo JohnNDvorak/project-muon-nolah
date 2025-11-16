@@ -67,10 +67,12 @@ def load_data(config, tokenizer):
     """Load and prepare FineWeb-Edu dataset."""
     print(f"📚 Loading dataset: {config['dataset_name']}")
 
+    # For quick tests, use very small dataset; for full runs, use 1%
+    num_examples = config.get('num_train_examples', 10000)
     dataset = load_dataset(
         config['dataset_name'],
         config['dataset_config'],
-        split="train[:1%]"  # Use 1% for fast iteration
+        split=f"train[:{num_examples}]"  # Configurable number of examples
     )
 
     # Split into train/val
