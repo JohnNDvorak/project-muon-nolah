@@ -26,25 +26,28 @@ def cmd_baseline(args):
 
     print(f"🚀 Launching baseline training ({args.steps} steps)...")
 
-    # Auto-calculate dataset size and batch size based on steps
-    # For small tests, use minimal data and smaller batches to avoid OOM
-    # Note: batch_size=4 is safest for this model (340M params, 512 seq len)
+    # Determine model size for batch size scaling
+    model_name = os.getenv("MODEL_NAME", "ibm-granite/granite-4.0-h-350m-base")
+    is_1b_model = "1b" in model_name.lower()
+
+    # Auto-calculate dataset size and batch size based on steps and model size
+    # 1B model requires 50% smaller batch sizes due to 3x parameter count
     if args.steps <= 50:
         num_examples = 1000  # Small test
-        batch_size = 4  # Small batch to fit in memory
+        batch_size = 2 if is_1b_model else 4
     elif args.steps <= 100:
         num_examples = 10000  # Medium-small run
-        batch_size = 4  # Keep small batch (backward pass needs ~24GB)
+        batch_size = 2 if is_1b_model else 4
     elif args.steps <= 500:
         num_examples = 10000  # Medium run
-        batch_size = 4  # Conservative batch size
+        batch_size = 4 if is_1b_model else 4
     else:
         num_examples = 100000  # Full run (1% of 10BT)
-        batch_size = int(args.batch_size)  # Use command line arg for full runs
+        batch_size = int(args.batch_size) if args.batch_size < 16 else (8 if is_1b_model else 16)
 
     config = {
         "run_name": f"granite_baseline_{args.name}" if args.name else "granite_baseline",
-        "model_name": os.getenv("MODEL_NAME", "ibm-granite/granite-4.0-h-350m-base"),
+        "model_name": model_name,
         "dataset_name": os.getenv("DATASET_NAME", "HuggingFaceFW/fineweb-edu"),
         "dataset_config": os.getenv("DATASET_CONFIG", "sample-10BT"),
         "lr": float(args.lr),
@@ -73,24 +76,28 @@ def cmd_nolah(args):
 
     print(f"🧪 Launching NOLAH training (gate={args.gate}, scale={args.scale}, {args.steps} steps)...")
 
-    # Auto-calculate dataset size and batch size based on steps
-    # Note: batch_size=4 is safest for this model (340M params, 512 seq len)
+    # Determine model size for batch size scaling
+    model_name = os.getenv("MODEL_NAME", "ibm-granite/granite-4.0-h-350m-base")
+    is_1b_model = "1b" in model_name.lower()
+
+    # Auto-calculate dataset size and batch size based on steps and model size
+    # 1B model requires 50% smaller batch sizes due to 3x parameter count
     if args.steps <= 50:
         num_examples = 1000  # Small test
-        batch_size = 4  # Small batch to fit in memory
+        batch_size = 2 if is_1b_model else 4
     elif args.steps <= 100:
         num_examples = 10000  # Medium-small run
-        batch_size = 4  # Keep small batch (backward pass needs ~24GB)
+        batch_size = 2 if is_1b_model else 4
     elif args.steps <= 500:
         num_examples = 10000  # Medium run
-        batch_size = 4  # Conservative batch size
+        batch_size = 4 if is_1b_model else 4
     else:
         num_examples = 100000  # Full run (1% of 10BT)
-        batch_size = int(args.batch_size)  # Use command line arg for full runs
+        batch_size = int(args.batch_size) if args.batch_size < 16 else (8 if is_1b_model else 16)
 
     config = {
         "run_name": f"granite_nolah_{args.name}" if args.name else "granite_nolah",
-        "model_name": os.getenv("MODEL_NAME", "ibm-granite/granite-4.0-h-350m-base"),
+        "model_name": model_name,
         "dataset_name": os.getenv("DATASET_NAME", "HuggingFaceFW/fineweb-edu"),
         "dataset_config": os.getenv("DATASET_CONFIG", "sample-10BT"),
         "lr": float(args.lr),
@@ -111,6 +118,100 @@ def cmd_nolah(args):
     launch_training(
         script_path="src/train.py",
         config=config,
+        dry_run=args.dry_run
+    )
+
+
+def cmd_pretrain(args):
+    """Launch from-scratch pretraining with DDP."""
+    from utils.runpod_ssh import launch_training_ddp
+
+    # Determine optimizer type
+    if args.orthonoise:
+        optimizer_type = "OrthoNoise"
+    elif args.isotropic:
+        optimizer_type = "Isotropic"
+    elif args.nolah:
+        optimizer_type = "NOLAH"
+    else:
+        optimizer_type = "Muon"
+
+    print(f"🚀 Launching from-scratch pretraining with {optimizer_type} ({args.steps} steps on {args.ngpus} GPUs)...")
+
+    # For pretraining, use much larger dataset
+    # 5000 steps × batch_size=16 global = 80K batches
+    # 80K batches × 512 tokens = 40M tokens
+    # Need at least 200K examples to avoid repetition
+    if args.steps <= 100:
+        num_examples = 10000  # Quick test
+    elif args.steps <= 1000:
+        num_examples = 50000  # Medium test
+    else:
+        num_examples = 200000  # Full pretraining
+
+    # Per-GPU batch size (will be multiplied by number of GPUs)
+    # For 350M model on 4× H100: batch_size=4 per GPU = 16 global
+    # For 1B model on 4× H100: batch_size=2 per GPU = 8 global
+    model_name = args.model if args.model else os.getenv("MODEL_NAME", "ibm-granite/granite-4.0-h-350m-base")
+    is_1b_model = "1b" in model_name.lower()
+
+    if args.steps <= 100:
+        batch_size_per_gpu = 2 if is_1b_model else 4
+    else:
+        batch_size_per_gpu = 2 if is_1b_model else 4  # Conservative for stability
+
+    config = {
+        "run_name": f"granite_pretrain_{args.name}" if args.name else f"granite_pretrain_{optimizer_type.lower()}",
+        "model_name": model_name,
+        "dataset_name": os.getenv("DATASET_NAME", "HuggingFaceFW/fineweb-edu"),
+        "dataset_config": os.getenv("DATASET_CONFIG", "sample-10BT"),
+        "lr": float(args.lr),
+        "batch_size": batch_size_per_gpu,  # Per-GPU batch size
+        "max_steps": int(args.steps),
+        "warmup_steps": int(args.warmup),
+        "eval_steps": int(args.eval_steps),
+        "save_steps": int(args.save_steps),
+        "num_train_examples": num_examples,
+        "use_pretrained": False,  # Random initialization
+        "use_streaming": False,  # Load into memory for now
+        "seed": int(args.seed),
+        "nolah_enabled": args.nolah,
+        "orthonoise_enabled": args.orthonoise,
+        "isotropic_enabled": args.isotropic,
+        "output_dir": "/workspace/results",
+        "wandb_project": os.getenv("WANDB_PROJECT", "granite-muon-nolah"),
+        "wandb_entity": os.getenv("WANDB_ENTITY", "fishhooks1-independent-researcher")
+    }
+
+    # Add NOLAH params if enabled
+    if args.nolah:
+        config.update({
+            "nolah_gate_type": args.gate,
+            "nolah_scale_factor": float(args.scale)
+        })
+
+    # Add OrthoNoise params if enabled
+    if args.orthonoise:
+        config.update({
+            "orthonoise_alpha": float(args.alpha),
+            "orthonoise_annealing": not args.no_anneal,
+            "orthonoise_adaptive": not args.no_adaptive,
+            "orthonoise_rank_threshold": float(args.rank_threshold)
+        })
+
+    # Add Isotropic params if enabled
+    if args.isotropic:
+        config.update({
+            "isotropic_alpha": float(args.alpha),
+            "isotropic_annealing": not args.no_anneal,
+            "isotropic_adaptive": not args.no_adaptive,
+            "isotropic_rank_threshold": float(args.rank_threshold)
+        })
+
+    launch_training_ddp(
+        script_path="src/train_ddp.py",
+        config=config,
+        num_gpus=args.ngpus,
         dry_run=args.dry_run
     )
 
@@ -268,6 +369,37 @@ def main():
     setup = subparsers.add_parser("setup", help="Setup environment and Google Drive")
     setup.add_argument("--drive-path", help="Google Drive path for results (e.g., ~/Google Drive/muon-nolah-results)")
     setup.set_defaults(func=cmd_setup)
+
+    # Pretrain command
+    pretrain = subparsers.add_parser("pretrain", help="Launch from-scratch pretraining with DDP")
+    pretrain.add_argument("--steps", type=int, default=5000, help="Training steps (default: 5000)")
+    pretrain.add_argument("--ngpus", type=int, default=4, help="Number of GPUs (default: 4)")
+
+    # Optimizer selection (mutually exclusive)
+    pretrain.add_argument("--nolah", action="store_true", help="Use NOLAH-modified Muon optimizer")
+    pretrain.add_argument("--orthonoise", action="store_true", help="Use OrthoNoise optimizer (Method #1)")
+    pretrain.add_argument("--isotropic", action="store_true", help="Use Isotropic noise optimizer (control)")
+
+    # NOLAH-specific options
+    pretrain.add_argument("--gate", choices=["tanh", "sigmoid", "relu"], default="tanh", help="NOLAH gate function")
+    pretrain.add_argument("--scale", type=float, default=0.90, help="NOLAH momentum scale factor")
+
+    # OrthoNoise/Isotropic-specific options
+    pretrain.add_argument("--alpha", type=float, default=1e-2, help="Noise scale hyperparameter (default: 1e-2)")
+    pretrain.add_argument("--no-anneal", action="store_true", help="Disable noise annealing schedule")
+    pretrain.add_argument("--no-adaptive", action="store_true", help="Disable adaptive triggering based on rank")
+    pretrain.add_argument("--rank-threshold", type=float, default=0.5, help="Rank threshold ratio (default: 0.5)")
+
+    # Common training options
+    pretrain.add_argument("--model", type=str, help="Model name (default: from .env)")
+    pretrain.add_argument("--seed", type=int, default=42, help="Random seed")
+    pretrain.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
+    pretrain.add_argument("--warmup", type=int, default=100, help="Warmup steps")
+    pretrain.add_argument("--eval-steps", type=int, default=100, help="Evaluation interval")
+    pretrain.add_argument("--save-steps", type=int, default=500, help="Checkpoint interval")
+    pretrain.add_argument("--name", type=str, help="Run name suffix")
+    pretrain.add_argument("--dry-run", action="store_true", help="Show config without launching")
+    pretrain.set_defaults(func=cmd_pretrain)
 
     args = parser.parse_args()
 

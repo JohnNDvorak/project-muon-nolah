@@ -139,6 +139,66 @@ def launch_training(script_path: str, config: Dict[str, Any], dry_run: bool = Fa
     print(f"📈 Check status: python muon.py status")
 
 
+def launch_training_ddp(script_path: str, config: Dict[str, Any], num_gpus: int = 4, dry_run: bool = False) -> None:
+    """
+    Launch distributed training on RunPod using PyTorch DDP (torchrun).
+
+    Steps:
+    1. Upload script with embedded config
+    2. Start training with torchrun in background
+    3. Return WandB link
+
+    Args:
+        script_path: Path to training script (e.g., 'src/train_ddp.py')
+        config: Training configuration dictionary
+        num_gpus: Number of GPUs to use (default: 4)
+        dry_run: If True, show what would be executed without running
+    """
+    ssh_config = get_ssh_config()
+
+    # Upload script first
+    upload_script(script_path, config, dry_run)
+
+    if dry_run:
+        print("\nDRY RUN - Would execute:")
+        print(f"  torchrun --nproc_per_node={num_gpus} /workspace/train_ddp.py")
+        print(f"\nWith config:")
+        import pprint
+        print(pprint.pformat(config, indent=2, width=120))
+        print(f"\nGlobal batch size: {config['batch_size'] * num_gpus}")
+        return
+
+    # Launch distributed training with torchrun
+    print(f"🚀 Starting distributed training on {num_gpus} GPUs (run: {config['run_name']})...")
+    print(f"📊 Global batch size: {config['batch_size'] * num_gpus} ({config['batch_size']} per GPU × {num_gpus} GPUs)")
+
+    # Rename uploaded script to train_ddp.py for clarity
+    rename_cmd = build_ssh_command(
+        ssh_config,
+        "mv /workspace/train.py /workspace/train_ddp.py"
+    )
+    subprocess.run(rename_cmd, capture_output=True, text=True)
+
+    launch_cmd = build_ssh_command(
+        ssh_config,
+        f"export WANDB_API_KEY={ssh_config['wandb_key']} && "
+        f"cd /workspace && "
+        f"nohup torchrun --nproc_per_node={num_gpus} --nnodes=1 train_ddp.py > training.log 2>&1 &"
+    )
+
+    result = subprocess.run(launch_cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        print(f"❌ Launch failed: {result.stderr}")
+        raise RuntimeError("Failed to launch distributed training")
+
+    print("✅ Distributed training started!")
+    print(f"\n📊 WandB: https://wandb.ai/{config['wandb_entity']}/{config['wandb_project']}")
+    print(f"📝 Check logs: python muon.py logs")
+    print(f"📈 Check status: python muon.py status")
+    print(f"\n💡 Training uses {num_gpus}× GPUs with DDP - logs will show progress from rank 0")
+
+
 def check_status(show_gpu: bool = False, verbose: bool = False) -> None:
     """Check RunPod training status."""
     ssh_config = get_ssh_config()
